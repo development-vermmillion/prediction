@@ -1,0 +1,35 @@
+{
+  "name": "predicators",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Predicators — a liquid-glass prediction-games platform: player frontend + owner dashboard (Next.js, React, TypeScript).",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\""
+  },
+  "dependencies": {
+    "@fontsource-variable/outfit": "^5.2.8",
+    "@fontsource/orbitron": "^5.2.8",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.61.0",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
+    "tailwind-merge": "^3.3.1",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "postcss": "^8.5.0",
+    "prettier": "^3.6.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.0"
+  }
+}
