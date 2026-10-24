@@ -11,6 +11,7 @@ import {
 } from "@/lib/games/number-wheel";
 import { checkStake, getConfig } from "../config";
 import { get } from "../db";
+import { commitOf, floatFromSeed, newSeed } from "../fair";
 import { pushWin } from "../feed";
 import { recentResults, recordRound } from "../rounds";
 import { assertCanPlay, GameError, handle, secureFloat, userOf } from "../socket-utils";
@@ -28,6 +29,7 @@ interface Placed {
 const GAME = "number-wheel";
 const ROOM = "game:number-wheel";
 const MAX_BETS_PER_ROUND = 30;
+const OUTCOMES = WHEEL_SEGMENTS;
 
 /** Shared Number Wheel: one spin for the whole table; everyone sees the same landing. */
 export class WheelEngine {
@@ -38,6 +40,10 @@ export class WheelEngine {
   private result: number | null = null;
   private jitter = 0;
   private placed: Placed[] = [];
+  private seed = "";
+  private commit = "";
+  private owed: number[] = Array(OUTCOMES).fill(0);
+  private pool = 0;
   private history: number[];
   private timer?: NodeJS.Timeout;
   private statsTimer?: NodeJS.Timeout;
@@ -68,6 +74,8 @@ export class WheelEngine {
       jitter: reveal ? this.jitter : 0,
       history: this.history,
       stats: this.stats(),
+      commit: this.commit,
+      seed: this.phase === "result" ? this.seed : null,
     };
   }
 
@@ -89,6 +97,10 @@ export class WheelEngine {
 
   private begin() {
     this.placed = [];
+    this.owed = Array(OUTCOMES).fill(0);
+    this.pool = 0;
+    this.seed = newSeed();
+    this.commit = commitOf(this.seed);
     this.result = null;
     if (!getConfig(GAME).enabled) {
       this.phase = "closed";
@@ -104,7 +116,7 @@ export class WheelEngine {
   }
 
   private spin() {
-    this.result = Math.floor(secureFloat() * WHEEL_SEGMENTS);
+    this.result = Math.floor(floatFromSeed(this.seed, GAME, this.roundNo) * WHEEL_SEGMENTS);
     this.jitter = (secureFloat() - 0.5) * SEGMENT_ANGLE * 0.6;
     this.phase = "spinning";
     this.spinStartedAt = Date.now();
@@ -136,11 +148,27 @@ export class WheelEngine {
         pushWin({ name: names.get(userId) ?? "Player", game: "Number Wheel", detail: `landed on ${result}`, amount: total });
       }
     }
-    recordRound(GAME, String(result), byUser.size, wagered, paid);
+    recordRound(GAME, String(result), byUser.size, wagered, paid, { roundNo: this.roundNo, seed: this.seed, commit: this.commit });
     this.history = [result, ...this.history].slice(0, 12);
     this.phase = "result";
     this.io.to(ROOM).emit("wheel:phase", this.phasePayload());
     this.timer = setTimeout(() => this.begin(), WHEEL_RESULT_MS);
+  }
+
+  /** Live risk for the owner dashboard. */
+  risk() {
+    const total = this.pool;
+    const expected = this.owed.reduce((a, v) => a + v, 0) / OUTCOMES;
+    return {
+      game: GAME,
+      phase: this.phase,
+      roundNo: this.roundNo,
+      players: new Set(this.placed.map((p) => p.userId)).size,
+      pool: total,
+      outcomes: this.owed.map((owed, n) => ({ label: String(n), owed, houseNet: total - owed })),
+      expectedHouseNet: Math.round(total - expected),
+      worstHouseNet: total - Math.max(...this.owed),
+    };
   }
 
   register(socket: Socket) {
@@ -154,8 +182,14 @@ export class WheelEngine {
       if (err) throw new GameError(err);
       if (this.mine(user.id).length >= MAX_BETS_PER_ROUND) throw new GameError("Too many bets this spin");
       const bet = { ...p.bet } as WheelBet;
+      const owed = this.owed.map((v, o) => v + settleWheelBet(bet, o));
+      if (Math.max(...owed) - (this.pool + bet.amount) > getConfig(GAME).maxExposure) {
+        throw new GameError("This spin has reached its limit for that bet. Try a smaller stake or another option.");
+      }
       const openId = placeStake(user.id, GAME, bet.amount, `Wheel #${this.roundNo} · ${bet.kind} ${bet.value}`);
       this.placed.push({ openId, userId: user.id, name: user.name, bet });
+      this.owed = owed;
+      this.pool += bet.amount;
       this.scheduleStats();
       return { mine: this.mine(user.id) };
     });

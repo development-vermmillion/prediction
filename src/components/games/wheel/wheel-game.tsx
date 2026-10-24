@@ -5,6 +5,7 @@ import { Users } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StakeInput } from "@/components/ui/stepper";
 import { useGameConfig } from "@/hooks/use-game-config";
+import { FairBadge } from "@/components/games/fair-badge";
 import { useGameSocket, useServerClock } from "@/hooks/use-game-socket";
 import {
   NUMBER_PAYOUT,
@@ -32,6 +33,7 @@ interface WheelState {
   jitter: number;
   history: number[];
   stats: { players: number; pool: number };
+  commit?: string;
 }
 
 const TONES = { green: "#22e58b", red: "#ff2d55", navy: "#2a2a6e" } as const;
@@ -121,6 +123,7 @@ export function WheelGame() {
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
       <GlassCard strong className="grid place-items-center p-6 md:p-10" glow="rgb(34 211 238 / 0.35)">
+        <div className="mb-2 w-full"><FairBadge commit={round?.commit} /></div>
         <div className="mb-4 flex w-full items-center justify-between text-sm">
           <span className="flex items-center gap-1.5 text-white/55">
             <Users size={14} /> {round?.stats.players ?? 0} players · pool {formatCoins(round?.stats.pool ?? 0)}

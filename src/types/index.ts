@@ -67,6 +67,7 @@ export interface GameConfig {
   minBet: number;
   maxBet: number;
   rake: number;
+  maxExposure: number;
 }
 
 export interface LeaderboardEntry {

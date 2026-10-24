@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { Server } from "socket.io";
 import { tokenFromCookieHeader, userFromToken } from "./auth-core";
-import { setIo } from "./bus";
+import { setIo, setRiskSources } from "./bus";
 import { AviatorEngine } from "./games/aviator";
 import { ColorEngine } from "./games/color-prediction";
 import { LudoEngine } from "./games/ludo";
@@ -33,6 +33,7 @@ export function attachSocket(httpServer: HttpServer) {
   const color = new ColorEngine(io);
   const wheel = new WheelEngine(io);
   const ludo = new LudoEngine(io);
+  setRiskSources({ aviator: () => aviator.risk(), color: () => color.risk(), wheel: () => wheel.risk() });
   const snapshots: Record<GameKey, (s: import("socket.io").Socket) => void> = {
     aviator: (s) => aviator.snapshot(s),
     "color-prediction": (s) => color.snapshot(s),

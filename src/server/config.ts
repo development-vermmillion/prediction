@@ -8,6 +8,7 @@ export interface GameConfigRow {
   minBet: number;
   maxBet: number;
   rake: number;
+  maxExposure: number;
 }
 
 interface Raw {
@@ -17,6 +18,7 @@ interface Raw {
   min_bet: number;
   max_bet: number;
   rake: number;
+  max_exposure: number;
 }
 
 const map = (r: Raw): GameConfigRow => ({
@@ -26,6 +28,7 @@ const map = (r: Raw): GameConfigRow => ({
   minBet: r.min_bet,
   maxBet: r.max_bet,
   rake: r.rake,
+  maxExposure: r.max_exposure,
 });
 
 export function getConfig(game: string): GameConfigRow {
@@ -42,12 +45,13 @@ export function updateConfig(game: string, patch: Partial<Omit<GameConfigRow, "g
   const cur = getConfig(game);
   const next = { ...cur, ...patch };
   run(
-    "UPDATE game_config SET enabled = ?, rtp = ?, min_bet = ?, max_bet = ?, rake = ? WHERE game = ?",
+    "UPDATE game_config SET enabled = ?, rtp = ?, min_bet = ?, max_bet = ?, rake = ?, max_exposure = ? WHERE game = ?",
     next.enabled ? 1 : 0,
     next.rtp,
     next.minBet,
     next.maxBet,
     next.rake,
+    next.maxExposure,
     game,
   );
   return getConfig(game);

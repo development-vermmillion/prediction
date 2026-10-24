@@ -5,6 +5,7 @@ import { Lock, Users } from "lucide-react";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StakeInput } from "@/components/ui/stepper";
 import { useGameConfig } from "@/hooks/use-game-config";
+import { FairBadge } from "@/components/games/fair-badge";
 import { useGameSocket, useServerClock } from "@/hooks/use-game-socket";
 import {
   COLOR_META,
@@ -26,6 +27,7 @@ interface RoundState {
   endsAt: number;
   history: { id: number; result: number }[];
   stats: { players: number; pool: number };
+  commit?: string;
 }
 
 const COLORS: ColorKey[] = ["green", "violet", "red"];
@@ -92,6 +94,7 @@ export function ColorGame() {
             <p className="mt-1 flex items-center gap-1.5 text-xs text-white/55">
               <Users size={13} /> {round?.stats.players ?? 0} players · pool {formatCoins(round?.stats.pool ?? 0)}
             </p>
+            <div className="mt-1"><FairBadge commit={round?.commit} /></div>
           </div>
           <div className="text-right">
             <p className="flex items-center justify-end gap-1 text-xs font-bold tracking-widest text-white/50 uppercase">

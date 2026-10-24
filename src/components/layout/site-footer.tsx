@@ -31,6 +31,7 @@ export function SiteFooter() {
             <ul className="space-y-2 text-sm text-white/60">
               <li><Link href="/wallet" className="hover:text-white">Wallet</Link></li>
               <li><Link href="/leaderboard" className="hover:text-white">Leaderboard</Link></li>
+              <li><Link href="/fairness" className="hover:text-white">Fairness</Link></li>
               <li><Link href="/profile" className="hover:text-white">Profile</Link></li>
             </ul>
           </div>

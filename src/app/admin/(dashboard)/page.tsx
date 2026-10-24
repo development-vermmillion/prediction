@@ -2,6 +2,7 @@
 
 import { Activity, Coins, Percent, TrendingUp, Users, Wallet, Wifi } from "lucide-react";
 import { GameSplitChart, RevenueChart, UsersChart } from "@/components/admin/charts";
+import { RiskPanel } from "@/components/admin/risk-panel";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatCard } from "@/components/admin/stat-card";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -58,6 +59,8 @@ export default function AdminOverviewPage() {
       <p className="mt-3 text-xs text-white/45">
         Credits allocated by you: {formatCoins(o.creditsGranted)} · removed: {formatCoins(o.creditsDeducted)} · rounds played: {formatCoins(o.roundsPlayed)} · profit last 24h: {formatCoins(o.todayGgr)}
       </p>
+
+      <RiskPanel />
 
       <div className="mt-6 grid gap-4 xl:grid-cols-[2fr_1fr]">
         <GlassCard className="p-5">

@@ -54,7 +54,7 @@ function GameCardConfig({ initial, onSaved }: { initial: GameConfig; onSaved: ()
     try {
       await api("/api/admin/games", {
         method: "PUT",
-        json: { game: c.game, enabled: c.enabled, minBet: c.minBet, maxBet: c.maxBet, ...(isLudo ? { rake: c.rake } : { rtp: c.rtp }) },
+        json: { game: c.game, enabled: c.enabled, minBet: c.minBet, maxBet: c.maxBet, ...(isLudo ? { rake: c.rake } : { rtp: c.rtp, maxExposure: c.maxExposure }) },
       });
       toast.success(`${meta.name} settings saved`, "Applies from the next round.");
       onSaved();
@@ -88,15 +88,29 @@ function GameCardConfig({ initial, onSaved }: { initial: GameConfig; onSaved: ()
       <div className="grid grid-cols-2 gap-3">
         {isLudo ? (
           <Num label="House fee (rake)" suffix="%" min={0} max={30} value={c.rake} onChange={(v) => setC({ ...c, rake: v })} />
-        ) : (
+        ) : c.game === "aviator" ? (
           <Num label="Return to player (RTP)" suffix="%" min={80} max={99} value={c.rtp} onChange={(v) => setC({ ...c, rtp: v })} />
+        ) : (
+          <div />
         )}
-        <div />
+        {!isLudo ? (
+          <Num
+            label={c.game === "aviator" ? "Max win per bet" : "Max house loss per round"}
+            suffix="cr"
+            min={1000}
+            max={100000000}
+            value={c.maxExposure}
+            onChange={(v) => setC({ ...c, maxExposure: Math.round(v) })}
+          />
+        ) : (
+          <div />
+        )}
         <Select label="Min stake" value={c.minBet} options={STAKE_OPTIONS} onChange={(v) => setC({ ...c, minBet: v })} />
         <Select label="Max stake" value={c.maxBet} options={STAKE_OPTIONS} onChange={(v) => setC({ ...c, maxBet: v })} />
       </div>
-      {c.game === "aviator" && <p className="mt-3 text-xs text-white/45">RTP shapes Aviator&apos;s crash distribution. Color Prediction and Number Wheel use fixed odds.</p>}
-      {(c.game === "color-prediction" || c.game === "number-wheel") && <p className="mt-3 text-xs text-white/45">This game pays fixed odds; the house edge comes from the odds table, so the RTP field is informational.</p>}
+      {c.game === "aviator" && <p className="mt-3 text-xs text-white/45">RTP sets the crash distribution. A bet is paid out automatically when it reaches the max win, and players see that limit.</p>}
+      {c.game === "color-prediction" && <p className="mt-3 text-xs text-white/45">Fixed odds: red/green 95% return, violet 90%, single number 90%. New bets that would push the house&apos;s worst-case loss past the limit are refused.</p>}
+      {c.game === "number-wheel" && <p className="mt-3 text-xs text-white/45">Fixed odds: outside bets 95.8% / 95% return, single number 91.7%. New bets that would push the house&apos;s worst-case loss past the limit are refused.</p>}
       <Button className="mt-4" full disabled={!dirty || busy} onClick={save}>
         {busy ? "Saving…" : "Save changes"}
       </Button>

@@ -83,12 +83,19 @@ CREATE TABLE IF NOT EXISTS credit_requests (
 CREATE INDEX IF NOT EXISTS credit_requests_status ON credit_requests(status, id DESC);
 `;
 
-const DEFAULT_CONFIG: Record<string, { rtp: number; min: number; max: number; rake: number }> = {
-  aviator: { rtp: 97, min: 10, max: 10_000, rake: 0 },
-  "color-prediction": { rtp: 95, min: 10, max: 10_000, rake: 0 },
-  "number-wheel": { rtp: 95, min: 10, max: 10_000, rake: 0 },
-  ludo: { rtp: 0, min: 10, max: 10_000, rake: 10 },
+/** `exposure`: Aviator = max payout per bet; Color/Wheel = max house loss per round; Ludo = unused. */
+const DEFAULT_CONFIG: Record<string, { rtp: number; min: number; max: number; rake: number; exposure: number }> = {
+  aviator: { rtp: 97, min: 10, max: 10_000, rake: 0, exposure: 100_000 },
+  "color-prediction": { rtp: 95, min: 10, max: 10_000, rake: 0, exposure: 500_000 },
+  "number-wheel": { rtp: 95, min: 10, max: 10_000, rake: 0, exposure: 500_000 },
+  ludo: { rtp: 0, min: 10, max: 10_000, rake: 10, exposure: 0 },
 };
+
+/** Add a column to an existing database if it is missing (schema upgrades without a migration tool). */
+function ensureColumn(db: DatabaseSync, table: string, column: string, ddl: string) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+}
 
 function open(): DatabaseSync {
   const file = process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "predicators.db");
@@ -96,10 +103,15 @@ function open(): DatabaseSync {
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
+  ensureColumn(db, "game_config", "max_exposure", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "rounds", "round_no", "INTEGER");
+  ensureColumn(db, "rounds", "seed", "TEXT");
+  ensureColumn(db, "rounds", "commit_hash", "TEXT");
+  ensureColumn(db, "rounds", "rtp", "REAL");
   const insert = db.prepare(
-    "INSERT OR IGNORE INTO game_config (game, enabled, rtp, min_bet, max_bet, rake) VALUES (?, 1, ?, ?, ?, ?)",
+    "INSERT OR IGNORE INTO game_config (game, enabled, rtp, min_bet, max_bet, rake, max_exposure) VALUES (?, 1, ?, ?, ?, ?, ?)",
   );
-  for (const [game, c] of Object.entries(DEFAULT_CONFIG)) insert.run(game, c.rtp, c.min, c.max, c.rake);
+  for (const [game, c] of Object.entries(DEFAULT_CONFIG)) insert.run(game, c.rtp, c.min, c.max, c.rake, c.exposure);
   return db;
 }
 

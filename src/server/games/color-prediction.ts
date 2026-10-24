@@ -8,9 +8,10 @@ import {
 } from "@/lib/games/color-prediction";
 import { checkStake, getConfig } from "../config";
 import { get } from "../db";
+import { commitOf, floatFromSeed, newSeed } from "../fair";
 import { pushWin } from "../feed";
 import { recentResults, recordRound } from "../rounds";
-import { assertCanPlay, GameError, handle, secureFloat, userOf } from "../socket-utils";
+import { assertCanPlay, GameError, handle, userOf } from "../socket-utils";
 import { placeStake, settleStake } from "../wallet";
 
 type Phase = "betting" | "locked" | "closed";
@@ -25,6 +26,7 @@ interface Placed {
 const GAME = "color-prediction";
 const ROOM = "game:color-prediction";
 const MAX_BETS_PER_ROUND = 20;
+const OUTCOMES = 10;
 
 /** Shared Color Prediction rounds: every player bets on, and sees, the same result. */
 export class ColorEngine {
@@ -33,6 +35,11 @@ export class ColorEngine {
   private lockAt = 0;
   private endsAt = 0;
   private placed: Placed[] = [];
+  private seed = "";
+  private commit = "";
+  /** Total payout owed per possible result, and total stake, for the exposure limit. */
+  private owed: number[] = Array(OUTCOMES).fill(0);
+  private pool = 0;
   private history: { id: number; result: number }[];
   private timer?: NodeJS.Timeout;
   private statsTimer?: NodeJS.Timeout;
@@ -58,6 +65,7 @@ export class ColorEngine {
       endsAt: this.endsAt,
       history: this.history,
       stats: this.stats(),
+      commit: this.commit,
     };
   }
 
@@ -79,6 +87,10 @@ export class ColorEngine {
 
   private begin() {
     this.placed = [];
+    this.owed = Array(OUTCOMES).fill(0);
+    this.pool = 0;
+    this.seed = newSeed();
+    this.commit = commitOf(this.seed);
     if (!getConfig(GAME).enabled) {
       this.phase = "closed";
       this.io.to(ROOM).emit("color:phase", this.phasePayload());
@@ -99,7 +111,7 @@ export class ColorEngine {
   }
 
   private finish() {
-    const result = Math.floor(secureFloat() * 10);
+    const result = Math.floor(floatFromSeed(this.seed, GAME, this.roundNo) * OUTCOMES);
     const byUser = new Map<number, { bet: ColorBet; payout: number }[]>();
     let wagered = 0;
     let paid = 0;
@@ -128,10 +140,26 @@ export class ColorEngine {
         pushWin({ name: names.get(userId) ?? "Player", game: "Color Prediction", detail: `hit ${result}`, amount: total });
       }
     }
-    const id = recordRound(GAME, String(result), byUser.size, wagered, paid);
+    const id = recordRound(GAME, String(result), byUser.size, wagered, paid, { roundNo: this.roundNo, seed: this.seed, commit: this.commit });
     this.history = [{ id, result }, ...this.history].slice(0, 15);
-    this.io.to(ROOM).emit("color:result", { roundNo: this.roundNo, result, history: this.history });
+    this.io.to(ROOM).emit("color:result", { roundNo: this.roundNo, result, history: this.history, seed: this.seed, commit: this.commit });
     this.begin();
+  }
+
+  /** Live risk for the owner dashboard. */
+  risk() {
+    const total = this.pool;
+    const expected = this.owed.reduce((a, v) => a + v, 0) / OUTCOMES;
+    return {
+      game: GAME,
+      phase: this.phase,
+      roundNo: this.roundNo,
+      players: new Set(this.placed.map((p) => p.userId)).size,
+      pool: total,
+      outcomes: this.owed.map((owed, n) => ({ label: String(n), owed, houseNet: total - owed })),
+      expectedHouseNet: Math.round(total - expected),
+      worstHouseNet: total - Math.max(...this.owed),
+    };
   }
 
   register(socket: Socket) {
@@ -145,8 +173,14 @@ export class ColorEngine {
       if (err) throw new GameError(err);
       if (this.mine(user.id).length >= MAX_BETS_PER_ROUND) throw new GameError("Too many bets this round");
       const bet = { ...p.bet } as ColorBet;
+      const owed = this.owed.map((v, o) => v + settleColorBet(bet, o));
+      if (Math.max(...owed) - (this.pool + bet.amount) > getConfig(GAME).maxExposure) {
+        throw new GameError("This round has reached its limit for that bet. Try a smaller stake or another option.");
+      }
       const openId = placeStake(user.id, GAME, bet.amount, `Color #${this.roundNo} · ${bet.kind} ${bet.value}`);
       this.placed.push({ openId, userId: user.id, name: user.name, bet });
+      this.owed = owed;
+      this.pool += bet.amount;
       this.scheduleStats();
       return { mine: this.mine(user.id) };
     });

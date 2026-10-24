@@ -12,7 +12,7 @@ export const GET = route(async () => {
 /** PUT { game, enabled?, rtp?, minBet?, maxBet?, rake? } */
 export const PUT = route(async (req: Request) => {
   await requireAdmin();
-  const b = await readJson<{ game?: string; enabled?: unknown; rtp?: unknown; minBet?: unknown; maxBet?: unknown; rake?: unknown }>(req);
+  const b = await readJson<{ game?: string; enabled?: unknown; rtp?: unknown; minBet?: unknown; maxBet?: unknown; rake?: unknown; maxExposure?: unknown }>(req);
   const game = String(b.game ?? "");
   let current;
   try {
@@ -32,6 +32,13 @@ export const PUT = route(async (req: Request) => {
     if (game !== "ludo") throw new HttpError("Only Ludo uses a rake");
     if (typeof b.rake !== "number" || b.rake < 0 || b.rake > 30) throw new HttpError("Rake must be between 0 and 30 percent");
     patch.rake = b.rake;
+  }
+  if (b.maxExposure !== undefined) {
+    if (game === "ludo") throw new HttpError("Ludo has no exposure limit");
+    if (typeof b.maxExposure !== "number" || !Number.isInteger(b.maxExposure) || b.maxExposure < 1000 || b.maxExposure > 100_000_000) {
+      throw new HttpError("Limit must be a whole number between 1,000 and 100,000,000");
+    }
+    patch.maxExposure = b.maxExposure;
   }
   if (b.minBet !== undefined) {
     if (!isValidStake(b.minBet)) throw new HttpError("Min stake must be 10, 20, 50 or a multiple of 100");

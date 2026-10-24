@@ -14,6 +14,21 @@ A multiplayer prediction-games site: **Aviator**, **Color Prediction**, **Number
 - Outcomes come from a CSPRNG on the server and are never sent before they are decided.
 - Every balance change is an append-only ledger row; stakes of unfinished rounds are refunded if the server restarts.
 
+## Fairness and house protection
+
+- **Provably fair rounds.** Before betting opens, the server shows a SHA-256 fingerprint of a secret seed. The result is computed from that seed alone, so no bet can influence it. The seed is revealed after the round and the public `/fairness` page re-checks every round in the browser.
+- **Fixed house edge, no rigging.** Aviator RTP is configurable (default 97%). Color Prediction returns 95% on red/green and 90% on violet and single numbers. Number Wheel returns about 95% on outside bets and 91.7% on a single number. `npm run simulate` runs a million rounds per game to confirm this.
+- **Exposure limits** (Owner → Games): Aviator pays out automatically at a *max win per bet*; Color and Wheel refuse bets that would push the house's worst-case loss for the round past *max house loss per round*.
+- **Live risk panel** on the owner overview shows each running round's pool, expected result and worst case.
+
+## Tests
+
+```bash
+npm run simulate                      # return-to-player check for every game
+BASE=http://localhost:3000 ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run test:e2e   # ~3 min, 42 checks
+```
+`scripts/loadtest.mjs` and `scripts/seed-load.ts` run thousands of players through the shared rounds.
+
 ## Run it
 
 Requires **Node ≥ 22.5** (uses built-in `node:sqlite`) and a **long-running process** (not serverless/Vercel).

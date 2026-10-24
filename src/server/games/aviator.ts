@@ -7,9 +7,10 @@ import {
   timeToMultiplier,
 } from "@/lib/games/aviator";
 import { checkStake, getConfig } from "../config";
+import { commitOf, floatFromSeed, newSeed } from "../fair";
 import { pushWin } from "../feed";
 import { recentResults, recordRound } from "../rounds";
-import { assertCanPlay, GameError, handle, secureFloat, userOf } from "../socket-utils";
+import { assertCanPlay, GameError, handle, userOf } from "../socket-utils";
 import { placeStake, refundStake, settleStake } from "../wallet";
 
 type Phase = "betting" | "flying" | "crashed" | "closed";
@@ -26,6 +27,7 @@ interface Bet {
 
 const GAME = "aviator";
 const ROOM = "game:aviator";
+const SHOWN_BETS = 40;
 
 /**
  * One shared Aviator table for everybody: a 60-second betting window, then a flight that
@@ -38,6 +40,11 @@ export class AviatorEngine {
   private bettingEndsAt = 0;
   private startedAt = 0;
   private crashPoint = 1;
+  private seed = "";
+  private commit = "";
+  private rtpUsed = 97;
+  private maxWin = 0;
+  private pool = 0;
   private crashAtMs = 0;
   private bets = new Map<number, Bet>();
   private history: number[];
@@ -52,8 +59,11 @@ export class AviatorEngine {
 
   /* ---------------- state ---------------- */
 
+  /** The table shows the biggest bets only, so 5,000 players never means 5,000-row broadcasts. */
   private publicBets() {
-    return [...this.bets.values()].map((b) => ({
+    const list = [...this.bets.values()];
+    if (list.length > SHOWN_BETS) list.sort((a, b) => b.amount - a.amount).length = SHOWN_BETS;
+    return list.map((b) => ({
       userId: b.userId,
       name: b.name,
       amount: b.amount,
@@ -71,6 +81,11 @@ export class AviatorEngine {
       startedAt: this.startedAt,
       crashPoint: this.phase === "crashed" ? this.crashPoint : null,
       history: this.history,
+      commit: this.commit,
+      seed: this.phase === "crashed" ? this.seed : null,
+      maxWin: this.maxWin,
+      totalPlayers: this.bets.size,
+      totalStake: this.pool,
     };
   }
 
@@ -111,7 +126,12 @@ export class AviatorEngine {
     this.phase = "betting";
     this.bettingEndsAt = Date.now() + AVIATOR_BETTING_MS;
     this.startedAt = 0;
-    this.crashPoint = generateCrashPoint(secureFloat, Math.min(0.99, Math.max(0.8, cfg.rtp / 100)));
+    this.seed = newSeed();
+    this.commit = commitOf(this.seed);
+    this.rtpUsed = Math.min(99, Math.max(80, cfg.rtp));
+    this.maxWin = cfg.maxExposure;
+    this.pool = 0;
+    this.crashPoint = generateCrashPoint(() => floatFromSeed(this.seed, GAME, this.roundId), this.rtpUsed / 100);
     this.crashAtMs = timeToMultiplier(this.crashPoint);
     this.broadcastPhase();
     this.io.to(ROOM).emit("aviator:bets", { bets: [] });
@@ -130,9 +150,11 @@ export class AviatorEngine {
     if (elapsed >= this.crashAtMs) return this.crash();
     const m = multiplierAt(elapsed);
     for (const bet of this.bets.values()) {
-      if (bet.cashedAt === null && bet.autoCash !== null && bet.autoCash <= this.crashPoint && m >= bet.autoCash) {
-        this.cashOut(bet, bet.autoCash);
-      }
+      if (bet.cashedAt !== null) continue;
+      // Per-bet win limit: the bet is paid out automatically when it reaches the limit.
+      const limitMult = Math.floor((this.maxWin / bet.amount) * 100) / 100;
+      const target = bet.autoCash !== null ? Math.min(bet.autoCash, limitMult) : limitMult;
+      if (target <= this.crashPoint && m >= target) this.cashOut(bet, Math.max(1, target));
     }
   }
 
@@ -159,7 +181,12 @@ export class AviatorEngine {
       if (bet.cashedAt === null) settleStake(bet.openId, bet.userId, GAME, 0, "Aviator crash");
       else paid += bet.payout;
     }
-    recordRound(GAME, `${this.crashPoint.toFixed(2)}x`, this.bets.size, wagered, paid);
+    recordRound(GAME, `${this.crashPoint.toFixed(2)}x`, this.bets.size, wagered, paid, {
+      roundNo: this.roundId,
+      seed: this.seed,
+      commit: this.commit,
+      rtp: this.rtpUsed,
+    });
     this.history = [this.crashPoint, ...this.history].slice(0, 15);
     this.broadcastPhase();
     this.io.to(ROOM).emit("aviator:bets", { bets: this.publicBets() });
@@ -167,6 +194,23 @@ export class AviatorEngine {
   }
 
   /* ---------------- player actions ---------------- */
+
+  /** Live risk for the owner dashboard. */
+  risk() {
+    const list = [...this.bets.values()];
+    const cashed = list.filter((b) => b.cashedAt !== null);
+    return {
+      game: GAME,
+      phase: this.phase,
+      roundNo: this.roundId,
+      players: list.length,
+      pool: this.pool,
+      paidSoFar: cashed.reduce((a, b) => a + b.payout, 0),
+      cashedOut: cashed.length,
+      stillIn: list.length - cashed.length,
+      maxWinPerBet: this.maxWin,
+    };
+  }
 
   register(socket: Socket) {
     const user = userOf(socket);
@@ -186,6 +230,7 @@ export class AviatorEngine {
       }
       const openId = placeStake(user.id, GAME, p.amount, `Aviator bet · round ${this.roundId}`);
       this.bets.set(user.id, { openId, userId: user.id, name: user.name, amount: p.amount, autoCash, cashedAt: null, payout: 0 });
+      this.pool += p.amount;
       this.scheduleBetsBroadcast();
       return { mine: { amount: p.amount, autoCash, cashedAt: null, payout: 0 } };
     });
@@ -195,6 +240,7 @@ export class AviatorEngine {
       if (this.phase !== "betting" || !bet) throw new GameError("Nothing to cancel");
       refundStake(bet.openId, user.id, GAME, bet.amount, "Aviator bet cancelled");
       this.bets.delete(user.id);
+      this.pool -= bet.amount;
       this.scheduleBetsBroadcast();
     });
 

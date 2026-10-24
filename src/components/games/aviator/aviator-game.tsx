@@ -8,6 +8,7 @@ import { Coin } from "@/components/ui/coin";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StakeInput } from "@/components/ui/stepper";
 import { useGameConfig } from "@/hooks/use-game-config";
+import { FairBadge } from "@/components/games/fair-badge";
 import { useGameSocket, useServerClock } from "@/hooks/use-game-socket";
 import {
   AVIATOR_BETTING_MS,
@@ -46,6 +47,10 @@ interface PhaseState {
   startedAt: number;
   crashPoint: number | null;
   history: number[];
+  commit?: string;
+  maxWin?: number;
+  totalPlayers?: number;
+  totalStake?: number;
 }
 
 const W = 800;
@@ -258,6 +263,10 @@ export function AviatorGame() {
           </Button>
         </GlassCard>
         {!cfg.enabled && <p className="text-center text-sm text-brand-gold">Aviator is temporarily closed by the owner.</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <FairBadge commit={round?.commit} />
+          {round?.maxWin ? <span className="text-[11px] text-white/40">Max win per bet: {formatCoins(round.maxWin)}</span> : null}
+        </div>
         {me.balance < cfg.minBet && (
           <p className="text-center text-sm text-white/55">You have no credits to bet with. Ask the owner to allocate credits to your account.</p>
         )}
@@ -265,7 +274,7 @@ export function AviatorGame() {
 
       <GlassCard className="p-5">
         <h3 className="mb-4 flex items-center justify-between font-bold">
-          Live bets <span className="text-xs font-semibold text-white/50">{bets.length} players</span>
+          Live bets <span className="text-xs font-semibold text-white/50">{round?.totalPlayers ?? bets.length} players</span>
         </h3>
         {bets.length === 0 ? (
           <p className="py-8 text-center text-sm text-white/45">No bets yet this round.</p>
