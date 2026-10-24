@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gamepad2, Gift, Home, Trophy, User } from "lucide-react";
+import { Gamepad2, Home, Trophy, User, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/games", label: "Games", icon: Gamepad2 },
   { href: "/leaderboard", label: "Ranks", icon: Trophy },
-  { href: "/rewards", label: "Rewards", icon: Gift },
+  { href: "/wallet", label: "Wallet", icon: Wallet },
   { href: "/profile", label: "Me", icon: User },
 ];
 

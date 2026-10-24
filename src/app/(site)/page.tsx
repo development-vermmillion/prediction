@@ -1,32 +1,29 @@
 import Link from "next/link";
 import { Plane, ShieldCheck, Sparkles, Zap } from "lucide-react";
-import { DailyStreak } from "@/components/home/daily-streak";
 import { GameArt } from "@/components/home/game-art";
 import { GameCard } from "@/components/home/game-card";
 import { LiveWins } from "@/components/home/live-wins";
-import { Podium } from "@/components/home/podium";
+import { LeaderboardTeaser } from "@/components/home/leaderboard-teaser";
+import { OnlineBadge } from "@/components/home/online-badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { SectionHeader } from "@/components/ui/section-header";
 import { GAMES, SITE_NAME } from "@/lib/constants";
-import { playerService } from "@/services";
 
 const PERKS = [
-  { icon: Zap, title: "Instant rounds", text: "New rounds every few seconds — no waiting around." },
-  { icon: ShieldCheck, title: "Free to play", text: "Virtual coins only. Nothing to deposit or withdraw." },
-  { icon: Sparkles, title: "Daily rewards", text: "Keep your streak alive for growing bonuses." },
+  { icon: Zap, title: "One round for everyone", text: "Aviator, Color and Wheel run on a shared clock — every player sees the same result." },
+  { icon: ShieldCheck, title: "Server-run games", text: "Results are generated and settled on the server, never in your browser." },
+  { icon: Sparkles, title: "Play Ludo head-to-head", text: "Open a 2 or 4 player table and the winner takes the pot." },
 ];
 
 export default function HomePage() {
-  const top = playerService.leaderboard().slice(0, 3);
-
   return (
     <div className="space-y-14 md:space-y-20">
       {/* Hero */}
       <section className="grid items-center gap-8 md:grid-cols-[1.1fr_0.9fr]">
         <div className="animate-fade-up">
           <span className="glass inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold tracking-widest text-brand-pink uppercase">
-            <span className="size-2 animate-pulse-glow rounded-full bg-brand-green" /> 32,000+ players online
+            <OnlineBadge />
           </span>
           <h1 className="mt-5 font-display text-4xl leading-[1.05] font-black md:text-6xl">
             Predict. <span className="text-gradient">Play.</span>
@@ -35,7 +32,7 @@ export default function HomePage() {
           </h1>
           <p className="mt-5 max-w-lg text-lg text-white/65">
             {SITE_NAME} is your arcade of four fast prediction games — Aviator, Ludo, Color Prediction and the Number Wheel.
-            Start with 2,450 free coins.
+            Join live rounds with other players.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/games/aviator">
@@ -85,30 +82,25 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Perks + streak */}
-      <section className="grid gap-4 md:grid-cols-[1fr_1.2fr]">
-        <div className="grid gap-4">
-          {PERKS.map(({ icon: Icon, title, text }) => (
-            <GlassCard key={title} className="flex items-center gap-4 p-5">
-              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-brand-pink">
-                <Icon />
-              </span>
-              <div>
-                <h3 className="font-bold">{title}</h3>
-                <p className="text-sm text-white/60">{text}</p>
-              </div>
-            </GlassCard>
-          ))}
-        </div>
-        <DailyStreak />
+      {/* Perks */}
+      <section className="grid gap-4 md:grid-cols-3">
+        {PERKS.map(({ icon: Icon, title, text }) => (
+          <GlassCard key={title} className="flex items-start gap-4 p-5">
+            <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 text-brand-pink">
+              <Icon />
+            </span>
+            <div>
+              <h3 className="font-bold">{title}</h3>
+              <p className="text-sm text-white/60">{text}</p>
+            </div>
+          </GlassCard>
+        ))}
       </section>
 
       {/* Leaderboard teaser */}
       <section>
-        <SectionHeader eyebrow="This week" title="Top predictors" href="/leaderboard" />
-        <GlassCard className="p-6 pt-10 md:p-10 md:pt-14">
-          <Podium entries={top} />
-        </GlassCard>
+        <SectionHeader eyebrow="All time" title="Top predictors" href="/leaderboard" />
+        <LeaderboardTeaser />
       </section>
     </div>
   );

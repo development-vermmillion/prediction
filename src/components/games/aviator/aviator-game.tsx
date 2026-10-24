@@ -1,192 +1,185 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plane } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Coin } from "@/components/ui/coin";
 import { GlassCard } from "@/components/ui/glass-card";
 import { StakeInput } from "@/components/ui/stepper";
+import { useGameConfig } from "@/hooks/use-game-config";
+import { useGameSocket, useServerClock } from "@/hooks/use-game-socket";
 import {
+  AVIATOR_BETTING_MS,
   curvePath,
-  generateBotBets,
-  generateCrashPoint,
   multiplierAt,
   multiplierTone,
+  timeToMultiplier,
   TONE_COLORS,
-  type BotBet,
   type CurvePoint,
 } from "@/lib/games/aviator";
+import { emitAck } from "@/lib/socket";
 import { cn, formatCoins, formatMultiplier } from "@/lib/utils";
+import { useSession } from "@/store/session";
 import { toast } from "@/store/toast";
-import { useWallet } from "@/store/wallet";
 
-type Phase = "waiting" | "flying" | "crashed";
-const WAIT_MS = 5000;
+type Phase = "betting" | "flying" | "crashed" | "closed";
+
+interface PublicBet {
+  userId: number;
+  name: string;
+  amount: number;
+  cashedAt: number | null;
+  payout: number;
+}
+interface Mine {
+  amount: number;
+  autoCash: number | null;
+  cashedAt: number | null;
+  payout: number;
+}
+interface PhaseState {
+  phase: Phase;
+  roundId: number;
+  serverTime: number;
+  bettingEndsAt: number;
+  startedAt: number;
+  crashPoint: number | null;
+  history: number[];
+}
+
 const W = 800;
 const H = 420;
 
 export function AviatorGame() {
-  const placeBet = useWallet((s) => s.placeBet);
-  const credit = useWallet((s) => s.credit);
+  const me = useSession((s) => s.user)!;
+  const cfg = useGameConfig("aviator");
+  const clock = useServerClock();
 
-  const [phase, setPhase] = useState<Phase>("waiting");
-  const [multiplier, setMultiplier] = useState(1);
-  const [countdown, setCountdown] = useState(WAIT_MS);
-  const [points, setPoints] = useState<CurvePoint[]>([]);
-  const [history, setHistory] = useState<number[]>([2.31, 1.12, 5.4, 1.0, 3.78, 12.04, 1.55, 2.02]);
-  const [bots, setBots] = useState<BotBet[]>([]);
-
+  const [round, setRound] = useState<PhaseState | null>(null);
+  const [bets, setBets] = useState<PublicBet[]>([]);
+  const [mine, setMine] = useState<Mine | null>(null);
   const [stake, setStake] = useState(100);
-  const [autoCash, setAutoCash] = useState(2);
   const [autoOn, setAutoOn] = useState(false);
-  const [bet, setBet] = useState<number | null>(null); // active stake this round
-  const [cashed, setCashed] = useState<number | null>(null); // multiplier cashed at
+  const [autoAt, setAutoAt] = useState(2);
+  const [busy, setBusy] = useState(false);
+  const [, frame] = useState(0);
+  const mineRef = useRef<Mine | null>(null);
+  mineRef.current = mine;
 
-  const betRef = useRef<number | null>(null);
-  const cashedRef = useRef<number | null>(null);
-  const autoRef = useRef({ on: false, at: 2 });
-  autoRef.current = { on: autoOn, at: autoCash };
-
-  const cashOut = useCallback(
-    (m: number) => {
-      const s = betRef.current;
-      if (s === null || cashedRef.current !== null) return;
-      cashedRef.current = m;
-      setCashed(m);
-      const payout = Math.floor(s * m);
-      credit("aviator", payout, `Aviator cash-out @ ${m.toFixed(2)}x`);
-      toast.success(`Cashed out ${formatMultiplier(m)}`, `+${formatCoins(payout)} coins`);
+  const connected = useGameSocket("aviator", {
+    "aviator:state": (s: PhaseState & { bets: PublicBet[]; mine: Mine | null }) => {
+      clock.sync(s.serverTime);
+      setRound(s);
+      setBets(s.bets);
+      setMine(s.mine);
     },
-    [credit],
-  );
-
-  // Round loop
-  useEffect(() => {
-    let raf = 0;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const startRound = () => {
-      if (cancelled) return;
-      setPhase("waiting");
-      setMultiplier(1);
-      setPoints([]);
-      setCashed(null);
-      cashedRef.current = null;
-      setBots(generateBotBets());
-      const waitStart = performance.now();
-      const crash = generateCrashPoint();
-
-      const wait = () => {
-        if (cancelled) return;
-        const left = Math.max(0, WAIT_MS - (performance.now() - waitStart));
-        setCountdown(left);
-        if (left > 0) {
-          raf = requestAnimationFrame(wait);
-          return;
-        }
-        fly(crash);
-      };
-      raf = requestAnimationFrame(wait);
-    };
-
-    const fly = (crash: number) => {
-      setPhase("flying");
-      const t0 = performance.now();
-      const samples: CurvePoint[] = [];
-      const frame = () => {
-        if (cancelled) return;
-        const t = performance.now() - t0;
-        const m = multiplierAt(t);
-        if (m >= crash) {
-          samples.push({ t, m: crash });
-          setPoints([...samples]);
-          setMultiplier(crash);
-          setPhase("crashed");
-          setHistory((h) => [crash, ...h].slice(0, 12));
-          if (betRef.current !== null && cashedRef.current === null) {
-            toast.error(`Crashed at ${formatMultiplier(crash)}`, "Your stake was lost.");
-          }
-          betRef.current = null;
-          setBet(null);
-          timer = setTimeout(startRound, 3200);
-          return;
-        }
-        if (autoRef.current.on && betRef.current !== null && cashedRef.current === null && m >= autoRef.current.at) {
-          cashOut(autoRef.current.at);
-        }
-        samples.push({ t, m });
-        if (samples.length % 2 === 0) setPoints([...samples]);
-        setMultiplier(m);
-        raf = requestAnimationFrame(frame);
-      };
-      raf = requestAnimationFrame(frame);
-    };
-
-    startRound();
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-      if (timer) clearTimeout(timer);
-    };
-  }, [cashOut]);
-
-  const onPrimary = () => {
-    if (phase === "waiting" && bet === null) {
-      if (!placeBet("aviator", stake, `Aviator bet (${stake})`)) {
-        toast.error("Not enough coins", "Top up from the wallet page.");
-        return;
+    "aviator:phase": (s: PhaseState) => {
+      clock.sync(s.serverTime);
+      setRound(s);
+      if (s.phase === "betting") setMine(null);
+      if (s.phase === "crashed" && mineRef.current && mineRef.current.cashedAt === null) {
+        toast.error(`Flew away at ${formatMultiplier(s.crashPoint ?? 1)}`, "Your stake was lost.");
       }
-      betRef.current = stake;
-      setBet(stake);
-    } else if (phase === "waiting" && bet !== null) {
-      // cancel bet -> refund
-      credit("aviator", bet, "Aviator bet refunded");
-      betRef.current = null;
-      setBet(null);
-    } else if (phase === "flying" && bet !== null && cashed === null) {
-      cashOut(multiplier);
-    }
-  };
+    },
+    "aviator:bets": (p: { bets: PublicBet[] }) => setBets(p.bets),
+    "aviator:cashed": (p: { multiplier: number; payout: number }) => {
+      setMine((m) => (m ? { ...m, cashedAt: p.multiplier, payout: p.payout } : m));
+      toast.success(`Cashed out at ${formatMultiplier(p.multiplier)}`, `+${formatCoins(p.payout)} credits`);
+    },
+  });
+
+  // Animation clock: re-render every animation frame while a flight is on screen.
+  useEffect(() => {
+    if (round?.phase !== "flying") return;
+    let raf = 0;
+    const loop = () => {
+      frame((n) => n + 1);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [round?.phase, round?.roundId]);
+
+  // Countdown refresh while betting.
+  useEffect(() => {
+    if (round?.phase !== "betting") return;
+    const id = setInterval(() => frame((n) => n + 1), 100);
+    return () => clearInterval(id);
+  }, [round?.phase, round?.roundId]);
+
+  const now = clock.now();
+  const phase = round?.phase ?? "closed";
+  const crashPoint = round?.crashPoint ?? null;
+
+  const elapsed =
+    phase === "flying" ? Math.max(0, now - (round?.startedAt ?? now)) : phase === "crashed" && crashPoint ? timeToMultiplier(crashPoint) : 0;
+  const multiplier = phase === "crashed" && crashPoint ? crashPoint : phase === "flying" ? multiplierAt(elapsed) : 1;
+
+  const points: CurvePoint[] = useMemo(() => {
+    if (elapsed <= 0) return [];
+    const n = 90;
+    return Array.from({ length: n + 1 }, (_, i) => {
+      const t = (elapsed * i) / n;
+      return { t, m: multiplierAt(t) };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Math.round(elapsed / 40), phase]);
+  const path = curvePath(points, W, H);
 
   const tone = multiplierTone(multiplier);
   const color = phase === "crashed" ? "#ff2d55" : TONE_COLORS[tone];
-  const path = useMemo(() => curvePath(points, W, H), [points]);
+  const countdown = phase === "betting" ? Math.max(0, (round?.bettingEndsAt ?? 0) - now) : 0;
 
+  const act = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (phase === "betting" && !mine) {
+        const res = await emitAck("aviator:bet", { amount: stake, autoCash: autoOn ? autoAt : null });
+        if (!res.ok) toast.error("Bet not placed", res.error);
+        else setMine(res.mine as Mine);
+      } else if (phase === "betting" && mine) {
+        const res = await emitAck("aviator:cancel");
+        if (!res.ok) toast.error("Could not cancel", res.error);
+        else setMine(null);
+      } else if (phase === "flying" && mine && mine.cashedAt === null) {
+        const res = await emitAck("aviator:cashout");
+        if (!res.ok) toast.error("Cash-out failed", res.error);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canCashOut = phase === "flying" && !!mine && mine.cashedAt === null;
   const label =
-    phase === "waiting"
-      ? bet === null
-        ? `Place bet · ${formatCoins(stake)}`
-        : "Cancel bet"
-      : phase === "flying" && bet !== null && cashed === null
-        ? `Cash out · ${formatCoins(Math.floor(bet * multiplier))}`
+    phase === "betting"
+      ? mine
+        ? `Bet placed · ${formatCoins(mine.amount)} — tap to cancel`
+        : `Place bet · ${formatCoins(stake)}`
+      : canCashOut
+        ? `Cash out · ${formatCoins(Math.floor(mine!.amount * multiplier))}`
         : phase === "flying"
-          ? "Next round soon"
-          : "Round over";
-
-  const primaryDisabled = !(
-    (phase === "waiting") ||
-    (phase === "flying" && bet !== null && cashed === null)
-  );
+          ? mine?.cashedAt
+            ? `Cashed out at ${formatMultiplier(mine.cashedAt)}`
+            : "Next round starts after the break"
+          : phase === "crashed"
+            ? "Round over"
+            : "Game closed";
+  const disabled = !connected || busy || !(phase === "betting" || canCashOut) || (phase === "betting" && !cfg.enabled);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
       <div className="space-y-4">
-        {/* History */}
-        <div className="no-scrollbar flex gap-2 overflow-x-auto">
-          {history.map((h, i) => (
-            <span
-              key={i}
-              className="glass shrink-0 rounded-full px-3 py-1 text-sm font-bold"
-              style={{ color: TONE_COLORS[multiplierTone(h)] }}
-            >
+        <div className="no-scrollbar flex min-h-9 gap-2 overflow-x-auto">
+          {(round?.history ?? []).map((h, i) => (
+            <span key={i} className="glass shrink-0 rounded-full px-3 py-1 text-sm font-bold" style={{ color: TONE_COLORS[multiplierTone(h)] }}>
               {h.toFixed(2)}x
             </span>
           ))}
         </div>
 
-        {/* Stage */}
         <GlassCard strong className="relative overflow-hidden" glow={`${color}55`}>
           <svg viewBox={`0 0 ${W} ${H}`} className="block aspect-[800/420] w-full">
             <defs>
@@ -200,7 +193,7 @@ export function AviatorGame() {
             ))}
             {path.area && <path d={path.area} fill="url(#av-fill)" />}
             {path.line && <path d={path.line} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />}
-            {points.length > 0 && phase !== "crashed" && (
+            {points.length > 0 && phase === "flying" && (
               <g transform={`translate(${path.head.x} ${path.head.y}) rotate(${path.head.angle})`}>
                 <path d="M-6 -14 L28 0 L-6 14 L0 0 Z" fill={color} />
                 <circle r="6" fill="#fff" />
@@ -209,42 +202,46 @@ export function AviatorGame() {
           </svg>
 
           <div className="absolute inset-0 grid place-items-center">
-            {phase === "waiting" ? (
+            {phase === "betting" ? (
               <div className="text-center">
                 <p className="text-sm font-semibold tracking-widest text-white/60 uppercase">Next flight in</p>
-                <p className="font-display text-6xl font-black tabular-nums">{(countdown / 1000).toFixed(1)}s</p>
+                <p className="font-display text-6xl font-black tabular-nums">{Math.ceil(countdown / 1000)}s</p>
                 <div className="mx-auto mt-3 h-1.5 w-48 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full rounded-full bg-brand-pink" style={{ width: `${(countdown / WAIT_MS) * 100}%` }} />
+                  <div className="h-full rounded-full bg-brand-pink" style={{ width: `${(countdown / AVIATOR_BETTING_MS) * 100}%` }} />
                 </div>
+                <p className="mt-3 text-sm text-white/55">Place your bets now</p>
               </div>
+            ) : phase === "closed" ? (
+              <p className="text-xl font-bold text-white/60">{round ? "Aviator is currently closed" : "Connecting…"}</p>
             ) : (
               <div className="text-center">
-                <p
-                  className="font-display text-6xl font-black tabular-nums md:text-8xl"
-                  style={{ color, textShadow: `0 0 40px ${color}` }}
-                >
+                <p className="font-display text-6xl font-black tabular-nums md:text-8xl" style={{ color, textShadow: `0 0 40px ${color}` }}>
                   {formatMultiplier(multiplier)}
                 </p>
                 {phase === "crashed" && <p className="mt-1 text-xl font-bold text-brand-red">Flew away!</p>}
-                {cashed !== null && <p className="mt-1 text-lg font-bold text-brand-green">You cashed out at {formatMultiplier(cashed)}</p>}
+                {mine?.cashedAt != null && (
+                  <p className="mt-1 text-lg font-bold text-brand-green">
+                    You cashed out at {formatMultiplier(mine.cashedAt)} · +{formatCoins(mine.payout)}
+                  </p>
+                )}
               </div>
             )}
           </div>
         </GlassCard>
 
-        {/* Controls */}
         <GlassCard className="grid gap-5 p-5 md:grid-cols-[1fr_auto] md:items-end">
           <div className="space-y-4">
-            <StakeInput value={stake} onChange={setStake} disabled={bet !== null} color="#ff2d55" max={10000} />
-            <label className="flex items-center gap-3 text-sm">
-              <input type="checkbox" checked={autoOn} onChange={(e) => setAutoOn(e.target.checked)} className="size-4 accent-[#ff2d55]" />
+            <StakeInput value={stake} onChange={setStake} disabled={phase !== "betting" || !!mine} color="#ff2d55" min={cfg.minBet} max={cfg.maxBet} />
+            <label className="flex flex-wrap items-center gap-3 text-sm">
+              <input type="checkbox" checked={autoOn} disabled={phase !== "betting" || !!mine} onChange={(e) => setAutoOn(e.target.checked)} className="size-4 accent-[#ff2d55]" />
               Auto cash-out at
               <input
                 type="number"
                 min={1.1}
                 step={0.1}
-                value={autoCash}
-                onChange={(e) => setAutoCash(Math.max(1.1, Number(e.target.value) || 1.1))}
+                value={autoAt}
+                disabled={phase !== "betting" || !!mine}
+                onChange={(e) => setAutoAt(Math.max(1.1, Number(e.target.value) || 1.1))}
                 className="glass w-20 rounded-xl px-2 py-1 text-center font-bold outline-none"
               />
               x
@@ -252,43 +249,47 @@ export function AviatorGame() {
           </div>
           <Button
             size="lg"
-            variant={phase === "flying" && bet !== null && cashed === null ? "success" : bet !== null ? "glass" : "primary"}
-            className="min-w-56"
-            disabled={primaryDisabled}
-            onClick={onPrimary}
+            variant={canCashOut ? "success" : mine && phase === "betting" ? "glass" : "primary"}
+            className="min-w-60"
+            disabled={disabled}
+            onClick={act}
           >
             <Plane size={20} /> {label}
           </Button>
         </GlassCard>
+        {!cfg.enabled && <p className="text-center text-sm text-brand-gold">Aviator is temporarily closed by the owner.</p>}
+        {me.balance < cfg.minBet && (
+          <p className="text-center text-sm text-white/55">You have no credits to bet with. Ask the owner to allocate credits to your account.</p>
+        )}
       </div>
 
-      {/* Live bets */}
       <GlassCard className="p-5">
         <h3 className="mb-4 flex items-center justify-between font-bold">
-          Live bets <span className="text-xs font-semibold text-white/50">{bots.length + (bet ? 1 : 0)} players</span>
+          Live bets <span className="text-xs font-semibold text-white/50">{bets.length} players</span>
         </h3>
-        <ul className="space-y-2">
-          {bet !== null && (
-            <li className="flex items-center justify-between rounded-2xl bg-brand-pink/15 p-2.5">
-              <span className="flex items-center gap-2 font-semibold"><Avatar name="You" size={30} /> You</span>
-              <span className="flex items-center gap-1 text-sm font-bold">{formatCoins(bet)} <Coin size={14} /></span>
-            </li>
-          )}
-          {bots.map((b) => {
-            const out = phase !== "waiting" && multiplier >= b.target;
-            return (
+        {bets.length === 0 ? (
+          <p className="py-8 text-center text-sm text-white/45">No bets yet this round.</p>
+        ) : (
+          <ul className="max-h-[28rem] space-y-2 overflow-y-auto">
+            {bets.map((b) => (
               <li
-                key={b.id}
-                className={cn("flex items-center justify-between rounded-2xl p-2.5 text-sm transition", out ? "bg-brand-green/15" : "bg-white/5")}
+                key={b.userId}
+                className={cn(
+                  "flex items-center justify-between rounded-2xl p-2.5 text-sm transition",
+                  b.cashedAt ? "bg-brand-green/15" : b.userId === me.id ? "bg-brand-pink/15" : "bg-white/5",
+                )}
               >
-                <span className="flex items-center gap-2 font-semibold"><Avatar name={b.name} hue={b.hue} size={30} /> {b.name}</span>
-                <span className={cn("font-bold", out ? "text-brand-green" : "text-white/70")}>
-                  {out ? `${b.target.toFixed(2)}x · +${formatCoins(Math.floor(b.amount * b.target))}` : formatCoins(b.amount)}
+                <span className="flex items-center gap-2 font-semibold">
+                  <Avatar name={b.name} size={30} /> {b.userId === me.id ? "You" : b.name}
+                </span>
+                <span className={cn("flex items-center gap-1 font-bold", b.cashedAt ? "text-brand-green" : "text-white/75")}>
+                  {b.cashedAt ? `${b.cashedAt.toFixed(2)}x · +${formatCoins(b.payout)}` : formatCoins(b.amount)}
+                  {!b.cashedAt && <Coin size={14} />}
                 </span>
               </li>
-            );
-          })}
-        </ul>
+            ))}
+          </ul>
+        )}
       </GlassCard>
     </div>
   );

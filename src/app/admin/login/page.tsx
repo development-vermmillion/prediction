@@ -6,27 +6,38 @@ import { ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Logo } from "@/components/ui/logo";
-import { ADMIN_EMAIL, ADMIN_PASSWORD } from "@/lib/constants";
-import { useAdminAuth } from "@/store/admin-auth";
+import { api } from "@/lib/api";
+import { useSession, type ClientUser } from "@/store/session";
 import { toast } from "@/store/toast";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const { authed, login } = useAdminAuth();
+  const { user, setUser } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (authed) router.replace("/admin");
-  }, [authed, router]);
+    if (user?.role === "admin") router.replace("/admin");
+  }, [user, router]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (login(email, password)) {
+    setBusy(true);
+    try {
+      const res = await api<{ user: ClientUser }>("/api/auth/login", { method: "POST", json: { email, password } });
+      if (res.user.role !== "admin") {
+        await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+        toast.error("Not an owner account");
+        return;
+      }
+      setUser(res.user);
       toast.success("Welcome, owner");
       router.replace("/admin");
-    } else {
-      toast.error("Invalid credentials");
+    } catch (err) {
+      toast.error("Sign-in failed", (err as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -44,14 +55,12 @@ export default function AdminLoginPage() {
           <p className="text-sm text-white/55">Restricted area — sign in to continue.</p>
         </div>
         <form onSubmit={submit} className="space-y-3">
-          <input className={field} type="email" placeholder="Owner email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className={field} type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <Button full size="lg" type="submit">Sign in</Button>
+          <input className={field} type="email" placeholder="Owner email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className={field} type="password" placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <Button full size="lg" type="submit" disabled={busy}>
+            {busy ? "Signing in…" : "Sign in"}
+          </Button>
         </form>
-        <div className="mt-5 rounded-2xl bg-white/5 p-3 text-xs text-white/55">
-          Demo credentials: <span className="font-semibold text-white/80">{ADMIN_EMAIL}</span> /{" "}
-          <span className="font-semibold text-white/80">{ADMIN_PASSWORD}</span>
-        </div>
       </GlassCard>
     </div>
   );

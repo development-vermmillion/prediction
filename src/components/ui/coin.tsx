@@ -13,7 +13,7 @@ export function Coin({ size = 20, className }: { size?: number; className?: stri
         boxShadow: "inset 0 -2px 3px rgb(160 80 0 / 0.5), 0 2px 6px rgb(255 170 0 / 0.4)",
       }}
     >
-      ₱
+      C
     </span>
   );
 }

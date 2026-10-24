@@ -4,16 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar } from "@/components/ui/avatar";
 import { Logo } from "@/components/ui/logo";
-import { useMounted } from "@/hooks/use-mounted";
 import { NAV_LINKS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { usePlayer } from "@/store/player";
+import { useSession } from "@/store/session";
 import { WalletPill } from "./wallet-pill";
 
 export function SiteNavbar() {
   const pathname = usePathname();
-  const mounted = useMounted();
-  const { loggedIn, name } = usePlayer();
+  const user = useSession((s) => s.user);
+  const loaded = useSession((s) => s.loaded);
 
   return (
     <header className="sticky top-0 z-40 px-3 pt-3 md:px-6">
@@ -38,18 +37,18 @@ export function SiteNavbar() {
         </nav>
         <div className="flex items-center gap-2">
           <WalletPill />
-          {mounted && loggedIn ? (
+          {user ? (
             <Link href="/profile" aria-label="Profile">
-              <Avatar name={name} size={38} />
+              <Avatar name={user.name} size={38} />
             </Link>
-          ) : (
+          ) : loaded ? (
             <Link
               href="/login"
               className="hidden rounded-full bg-white/10 px-4 py-2 text-sm font-semibold hover:bg-white/20 sm:block"
             >
               Sign in
             </Link>
-          )}
+          ) : null}
         </div>
       </div>
     </header>

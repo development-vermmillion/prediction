@@ -1,9 +1,8 @@
-import { mulberry32 } from "@/lib/utils";
-
 export type ColorKey = "green" | "violet" | "red";
 
-export const ROUND_MS = 30_000;
-export const LOCK_MS = 5_000;
+export const COLOR_ROUND_MS = 30_000;
+/** Betting closes this long before the round ends. */
+export const COLOR_LOCK_MS = 5_000;
 
 export const COLOR_META: Record<ColorKey, { label: string; hex: string; dark: string; odds: number }> = {
   green: { label: "Green", hex: "#22e58b", dark: "#05633c", odds: 2 },
@@ -12,8 +11,10 @@ export const COLOR_META: Record<ColorKey, { label: string; hex: string; dark: st
 };
 
 export const NUMBER_ODDS = 9;
+/** Red/Green bets pay this when the number is 0 or 5 (those also show violet). */
+export const MIXED_ODDS = 1.5;
 
-/** Colours that a number shows. 0 = red+violet, 5 = green+violet. */
+/** Colours a number shows. 0 = red+violet, 5 = green+violet. */
 export function colorsOf(n: number): ColorKey[] {
   if (n === 0) return ["red", "violet"];
   if (n === 5) return ["green", "violet"];
@@ -24,42 +25,24 @@ export function primaryColor(n: number): ColorKey {
   return colorsOf(n)[0];
 }
 
-export function roundIndexAt(now: number) {
-  return Math.floor(now / ROUND_MS);
-}
-
-/** Deterministic result per round so every client sees the same outcome. */
-export function resultFor(roundIndex: number) {
-  const rand = mulberry32(roundIndex * 2654435761);
-  rand();
-  return Math.floor(rand() * 10);
-}
-
-export function periodId(roundIndex: number) {
-  const d = new Date(roundIndex * ROUND_MS);
-  const day = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
-  const slot = Math.floor(((roundIndex * ROUND_MS) % 86_400_000) / ROUND_MS);
-  return `${day}${String(slot).padStart(4, "0")}`;
-}
-
 export type ColorBet =
-  | { kind: "color"; value: ColorKey; amount: number; roundIndex: number }
-  | { kind: "number"; value: number; amount: number; roundIndex: number };
+  | { kind: "color"; value: ColorKey; amount: number }
+  | { kind: "number"; value: number; amount: number };
 
-/** Returns payout (total coins returned, 0 when lost). */
-export function settleBet(bet: ColorBet, result: number) {
+/** Total coins returned for a bet (0 when lost). */
+export function settleColorBet(bet: ColorBet, result: number) {
   if (bet.kind === "number") return bet.value === result ? bet.amount * NUMBER_ODDS : 0;
   const colors = colorsOf(result);
   if (!colors.includes(bet.value)) return 0;
-  if (bet.value === "violet") return bet.amount * COLOR_META.violet.odds;
-  // Mixed numbers (0 / 5) pay 1.5x on the primary colour.
+  if (bet.value === "violet") return Math.floor(bet.amount * COLOR_META.violet.odds);
   const mixed = colors.length === 2;
-  return bet.amount * (mixed ? 1.5 : COLOR_META[bet.value].odds);
+  return Math.floor(bet.amount * (mixed ? MIXED_ODDS : COLOR_META[bet.value].odds));
 }
 
-export function recentResults(currentIndex: number, count = 15) {
-  return Array.from({ length: count }, (_, i) => {
-    const idx = currentIndex - 1 - i;
-    return { roundIndex: idx, period: periodId(idx), result: resultFor(idx) };
-  });
+export function isColorBet(b: unknown): b is ColorBet {
+  if (!b || typeof b !== "object") return false;
+  const x = b as { kind?: unknown; value?: unknown };
+  if (x.kind === "color") return x.value === "green" || x.value === "violet" || x.value === "red";
+  if (x.kind === "number") return Number.isInteger(x.value) && (x.value as number) >= 0 && (x.value as number) <= 9;
+  return false;
 }

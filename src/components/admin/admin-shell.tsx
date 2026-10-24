@@ -6,43 +6,41 @@ import { useEffect, useState } from "react";
 import {
   ArrowLeftRight,
   Gamepad2,
-  Gift,
+  Coins,
   LayoutDashboard,
   LogOut,
   Menu,
-  Settings,
   Timer,
   Users,
   X,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Logo } from "@/components/ui/logo";
-import { useMounted } from "@/hooks/use-mounted";
 import { cn } from "@/lib/utils";
-import { useAdminAuth } from "@/store/admin-auth";
+import { useSession } from "@/store/session";
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/users", label: "Players", icon: Users },
+  { href: "/admin/credits", label: "Credits", icon: Coins },
   { href: "/admin/games", label: "Games", icon: Gamepad2 },
   { href: "/admin/rounds", label: "Rounds", icon: Timer },
   { href: "/admin/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { href: "/admin/promotions", label: "Promotions", icon: Gift },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const mounted = useMounted();
-  const { authed, email, logout } = useAdminAuth();
+  const { user, loaded, logout } = useSession();
   const [open, setOpen] = useState(false);
+  const authed = !!user && user.role === "admin";
+  const email = user?.email ?? null;
 
   useEffect(() => {
-    if (mounted && !authed) router.replace("/admin/login");
-  }, [mounted, authed, router]);
+    if (loaded && !authed) router.replace("/admin/login");
+  }, [loaded, authed, router]);
 
-  if (!mounted || !authed) {
+  if (!loaded || !authed) {
     return <div className="grid min-h-dvh place-items-center text-white/50">Checking access…</div>;
   }
 
@@ -79,8 +77,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <button
           aria-label="Sign out"
           className="cursor-pointer rounded-lg p-2 text-white/60 hover:bg-white/10 hover:text-white"
-          onClick={() => {
-            logout();
+          onClick={async () => {
+            await logout();
             router.replace("/admin/login");
           }}
         >

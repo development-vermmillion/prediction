@@ -1,24 +1,27 @@
 /**
- * Aviator engine (pure functions).
- *
- * NOTE: this runs in the browser for the demo. In production the crash point
- * must be generated server-side (provably fair) and streamed to clients.
+ * Aviator maths. Shared by the server (authoritative) and the client (animation only).
+ * The crash point is generated on the server and is never sent to clients before the crash.
  */
 
-export const AVIATOR_RTP = 0.97;
+/** Betting window between flights (the "1 minute break"). */
+export const AVIATOR_BETTING_MS = 60_000;
+/** How long the "flew away" screen stays up before the next betting window. */
+export const AVIATOR_CRASH_PAUSE_MS = 5_000;
+export const AVIATOR_MAX_MULTIPLIER = 1000;
+
 /** Growth constant: multiplier = e^(k * ms). Reaches ~2x after ~4.3s. */
 const GROWTH = 0.00016;
 
-export function generateCrashPoint(rand: () => number = Math.random, rtp = AVIATOR_RTP) {
+/** Classic crash distribution: P(crash >= x) = rtp / x. `rand` must return [0, 1). */
+export function generateCrashPoint(rand: () => number, rtp: number) {
   const r = rand();
-  // ~3% instant crash at 1.00x, otherwise heavy-tailed distribution.
-  if (r < 1 - rtp) return 1;
-  const point = (rtp / (1 - r)) * 1; // classic crash distribution
-  return Math.min(1000, Math.max(1, Math.floor(point * 100) / 100));
+  const point = rtp / (1 - r);
+  if (!Number.isFinite(point) || point < 1) return 1;
+  return Math.min(AVIATOR_MAX_MULTIPLIER, Math.floor(point * 100) / 100);
 }
 
 export function multiplierAt(elapsedMs: number) {
-  return Math.max(1, Math.exp(GROWTH * elapsedMs));
+  return Math.max(1, Math.exp(GROWTH * Math.max(0, elapsedMs)));
 }
 
 /** Milliseconds until the multiplier reaches `target`. */
@@ -38,33 +41,6 @@ export const TONE_COLORS = {
   high: "#ff5c9a",
 } as const;
 
-export interface BotBet {
-  id: string;
-  name: string;
-  amount: number;
-  target: number;
-  hue: [string, string];
-}
-
-const BOT_NAMES = ["Riya", "Kabir", "Meera", "Arjun", "Sana", "Vikram", "Isha", "Dev", "Naina", "Rohan"];
-const HUES: [string, string][] = [
-  ["#ffc83d", "#ff7a00"],
-  ["#22d3ee", "#2563eb"],
-  ["#a78bfa", "#ec4899"],
-  ["#22e58b", "#0e9f6e"],
-];
-
-export function generateBotBets(rand: () => number = Math.random, count = 8): BotBet[] {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `bot-${i}-${Math.floor(rand() * 1e6)}`,
-    name: BOT_NAMES[Math.floor(rand() * BOT_NAMES.length)],
-    amount: [50, 100, 200, 500, 1000][Math.floor(rand() * 5)],
-    target: Math.round((1.1 + Math.pow(rand(), 2.2) * 9) * 100) / 100,
-    hue: HUES[Math.floor(rand() * HUES.length)],
-  }));
-}
-
-/** Sample points used to draw the flight curve. */
 export interface CurvePoint {
   t: number;
   m: number;

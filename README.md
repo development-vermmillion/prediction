@@ -1,85 +1,45 @@
 # Predicators
 
-A prediction-games arcade built with **Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4**.
-Four playable games — **Aviator, Ludo, Color Prediction, Number Wheel** — a full player-facing site, and an
-**owner dashboard** at `/admin`.
+A multiplayer prediction-games site: **Aviator**, **Color Prediction**, **Number Wheel** and **Ludo**, plus an owner console.
 
-> All games use **virtual coins with no cash value**. Game engines run in the browser as simulations for demo
-> purposes. For anything real, outcomes (crash points, wheel results, dice) **must be generated and settled
-> server-side**, and balances must live in a database.
+## How it works
 
-## Getting started
+- **Credits** are allocated only by the owner from `/admin` → *Credits*. There is no payment gateway and no free coins.
+- **Shared rounds** — everyone sees the same round at the same time (server-authoritative, Socket.IO):
+  - Aviator: 60 s betting window, then the flight, then a 5 s pause, repeating.
+  - Color Prediction: 30 s rounds (betting locks for the last 5 s).
+  - Number Wheel: 20 s betting, 6 s spin, 4 s result.
+- **Ludo**: open a table for **2 or 4 players** at a chosen stake; the winner takes the pot minus the house fee (default 10%, set in *Games*).
+- **Stakes**: 10, 20, 50, or any multiple of 100 — enforced on client and server.
+- Outcomes come from a CSPRNG on the server and are never sent before they are decided.
+- Every balance change is an append-only ledger row; stakes of unfinished rounds are refunded if the server restarts.
+
+## Run it
+
+Requires **Node ≥ 22.5** (uses built-in `node:sqlite`) and a **long-running process** (not serverless/Vercel).
 
 ```bash
+cp .env.example .env     # set ADMIN_EMAIL / ADMIN_PASSWORD
 npm install
-cp .env.example .env.local   # optional
-npm run dev                  # http://localhost:3000
+npm run dev              # http://localhost:3000
+# production
+npm run build && npm start
 ```
 
-| Script              | What it does                    |
-| ------------------- | ------------------------------- |
-| `npm run dev`       | Start the dev server            |
-| `npm run build`     | Production build                |
-| `npm start`         | Serve the production build      |
-| `npm run typecheck` | Type-check with `tsc --noEmit`  |
-| `npm run format`    | Format with Prettier            |
+On first start the owner account is created from `ADMIN_EMAIL` / `ADMIN_PASSWORD` (dev default `admin@predicators.com` / `admin123`; production requires a password of 10+ characters). Set `INSECURE_COOKIES=1` only when testing production mode over plain HTTP.
 
-### Owner dashboard
+Data lives in SQLite at `DATABASE_PATH` (default `./data/predicators.db`). Game engines keep live round state in memory, so run a **single instance**.
 
-Open **`/admin`** and sign in with the demo credentials (override via `.env.local`):
+## Structure
 
 ```
-email:    admin@predicators.com
-password: admin123
+server.ts                 custom server: Next + Socket.IO
+src/server/               db, auth, wallet/ledger, socket, game engines (games/*)
+src/app/api/              auth, wallet, leaderboard, admin APIs
+src/app/(site)/           player site      src/app/admin/   owner console
+src/lib/games/            rules shared by client and server
 ```
 
-The dashboard has Overview (KPIs + charts), Players (search, filter, suspend/ban), Games (enable, RTP, stake
-limits), Rounds, Transactions, Promotions and Settings. Auth is a **client-side demo guard** — replace it with a
-real session (e.g. NextAuth or JWT cookies + `middleware.ts`) before deploying.
+## Responsible-use note
 
-## Project structure
-
-```
-src/
-├─ app/
-│  ├─ (site)/            Player site (navbar, footer, mobile nav layout)
-│  │  ├─ page.tsx        Home
-│  │  ├─ games/          Games list + aviator, color-prediction, number-wheel, ludo
-│  │  ├─ leaderboard/  wallet/  rewards/  profile/
-│  ├─ (auth)/            login, register (no site chrome)
-│  ├─ admin/
-│  │  ├─ login/          Owner sign-in
-│  │  └─ (dashboard)/    Guarded layout: overview, users, games, rounds,
-│  │                     transactions, promotions, settings
-│  ├─ layout.tsx         Root layout, ambient background, toaster
-│  └─ globals.css        Tailwind v4 theme, liquid-glass utilities, animations
-├─ components/
-│  ├─ ui/                Design-system primitives (GlassCard, Button, Chip, StakeInput…)
-│  ├─ layout/            Site navbar, mobile nav, footer, wallet pill
-│  ├─ home/              Hero pieces, game cards, live-wins ticker, podium, daily streak
-│  ├─ games/             One folder per game + shared GameShell
-│  ├─ admin/             Admin shell, data table, stat cards, charts
-│  └─ auth/              Player auth form
-├─ lib/
-│  ├─ games/             Pure game engines (aviator, color-prediction, number-wheel, ludo)
-│  ├─ mock/              Seeded mock data (deterministic, SSR-safe)
-│  ├─ constants.ts  utils.ts
-├─ services/             Data-access layer — swap mock data for real API calls here
-├─ store/                Zustand stores: wallet (persisted), player, admin-auth, toast
-├─ hooks/                useMounted, useNow
-└─ types/                Shared domain types
-```
-
-## Design notes
-
-- **Liquid glass**: `glass` / `glass-strong` utilities (backdrop blur, gradient border, inset highlight) in `globals.css`.
-- **Deterministic**: mock data uses a seeded PRNG and Color Prediction rounds are derived from the clock, so every
-  client sees the same result and SSR matches hydration. Persisted state is read only after mount (`useMounted`).
-- **Engines are pure**: `lib/games/*` contain no React, so they can move to a server unchanged.
-
-## Going to production
-
-1. Move engines to the server (provably-fair RNG) and settle bets there.
-2. Replace `src/services` bodies with API calls and `store/wallet.ts` with server balances.
-3. Replace the demo admin guard with real authentication and server-side authorization.
-4. Check the legal position for your jurisdiction before adding any real-money mechanics.
+Credits are only allocated by the owner and have no built-in cash purchase or cash-out. Before attaching real money to games like these, check the gambling/real-money gaming law that applies to you.

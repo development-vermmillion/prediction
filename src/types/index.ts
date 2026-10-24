@@ -7,72 +7,52 @@ export interface GameMeta {
   href: string;
   accent: string;
   maxMultiplier: string;
-  players: number;
-}
-
-export type TxnKind = "bet" | "win" | "bonus" | "topup";
-
-export interface Transaction {
-  id: string;
-  kind: TxnKind;
-  game?: GameId | "system";
-  label: string;
-  amount: number; // positive = credit, negative = debit
-  balanceAfter: number;
-  at: number; // epoch ms
 }
 
 export type PlayerColor = "red" | "green" | "yellow" | "blue";
 
-export interface LeaderboardEntry {
-  rank: number;
-  name: string;
-  coins: number;
-  wins: number;
-  favourite: GameId;
-  hue: [string, string];
-}
+export type TxnKind = "grant" | "deduct" | "bet" | "win" | "refund";
 
-export interface LiveWin {
-  id: string;
-  name: string;
-  game: string;
-  detail: string;
-  amount: number;
-  hue: [string, string];
+export interface Transaction {
+  id: number;
+  kind: TxnKind;
+  game: string | null;
+  amount: number; // signed
+  balanceAfter: number;
+  note: string | null;
+  at: number;
 }
-
-/* ---------- Admin / owner domain ---------- */
 
 export type UserStatus = "active" | "suspended" | "banned";
 
 export interface PlatformUser {
-  id: string;
+  id: number;
   name: string;
   email: string;
-  country: string;
   status: UserStatus;
   balance: number;
   wagered: number;
   won: number;
   joinedAt: number;
   lastSeenAt: number;
-  favourite: GameId;
 }
 
-export interface AdminTransaction {
-  id: string;
-  userId: string;
+export interface AdminLedgerEntry {
+  id: number;
+  userId: number;
   userName: string;
   kind: TxnKind;
-  game: GameId | "system";
+  game: string | null;
   amount: number;
+  balanceAfter: number;
+  note: string | null;
+  adminName: string | null;
   at: number;
 }
 
 export interface RoundRecord {
-  id: string;
-  game: GameId;
+  id: number;
+  game: string;
   result: string;
   players: number;
   wagered: number;
@@ -81,22 +61,28 @@ export interface RoundRecord {
 }
 
 export interface GameConfig {
-  id: GameId;
+  game: GameId;
   enabled: boolean;
-  rtp: number; // return-to-player %, e.g. 97
+  rtp: number;
   minBet: number;
   maxBet: number;
-  roundSeconds: number;
+  rake: number;
 }
 
-export interface Promotion {
+export interface LeaderboardEntry {
+  rank: number;
+  name: string;
+  won: number;
+  wagered: number;
+}
+
+export interface LiveWin {
   id: string;
-  title: string;
-  description: string;
-  coins: number;
-  active: boolean;
-  claimed: number;
-  endsAt: number;
+  name: string;
+  game: string;
+  detail: string;
+  amount: number;
+  at: number;
 }
 
 export interface DailyStat {
@@ -104,5 +90,4 @@ export interface DailyStat {
   wagered: number;
   paidOut: number;
   newUsers: number;
-  activeUsers: number;
 }

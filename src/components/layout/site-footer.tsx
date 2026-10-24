@@ -10,8 +10,8 @@ export function SiteFooter() {
           <div className="md:col-span-2">
             <Logo />
             <p className="mt-4 max-w-sm text-sm text-white/60">
-              {SITE_NAME} is a free-to-play prediction arcade. All games use virtual coins that have no cash value and can
-              never be withdrawn.
+              {SITE_NAME} is a live multiplayer prediction arcade. Every round is generated and settled on the server and
+              shared by all players. Credits are allocated by the platform owner.
             </p>
           </div>
           <div>
@@ -30,7 +30,7 @@ export function SiteFooter() {
             <h4 className="mb-3 text-sm font-bold">Account</h4>
             <ul className="space-y-2 text-sm text-white/60">
               <li><Link href="/wallet" className="hover:text-white">Wallet</Link></li>
-              <li><Link href="/rewards" className="hover:text-white">Rewards</Link></li>
+              <li><Link href="/leaderboard" className="hover:text-white">Leaderboard</Link></li>
               <li><Link href="/profile" className="hover:text-white">Profile</Link></li>
             </ul>
           </div>

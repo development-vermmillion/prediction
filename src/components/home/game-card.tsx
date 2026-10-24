@@ -33,7 +33,7 @@ export function GameCard({ game, tall }: { game: GameMeta; tall?: boolean }) {
         <h3 className="text-xl font-extrabold md:text-2xl">{game.name}</h3>
         <p className="mt-1 max-w-[70%] text-sm text-white/60">{game.tagline}</p>
         <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white/50">
-          <Users size={14} /> {formatCompact(game.players)} playing
+          <Users size={14} /> Live multiplayer · {game.maxMultiplier}
         </p>
       </div>
     </Link>

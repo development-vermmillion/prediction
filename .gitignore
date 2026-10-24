@@ -25,3 +25,9 @@ yarn-error.log*
 *.pem
 *.tsbuildinfo
 .vercel
+
+# local database
+/data
+*.db
+*.db-wal
+*.db-shm

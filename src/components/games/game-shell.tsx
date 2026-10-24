@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
+import { AuthGate } from "@/components/auth/auth-gate";
 import { GameArt } from "@/components/home/game-art";
 import { GAMES } from "@/lib/constants";
 import type { GameId } from "@/types";
@@ -22,9 +23,9 @@ export function GameShell({ id, children }: { id: GameId; children: React.ReactN
           <GameArt id={id} size={64} />
         </div>
       </div>
-      {children}
+      <AuthGate>{children}</AuthGate>
       <p className="mt-6 text-center text-xs text-white/35">
-        Demo game · results are simulated in your browser using virtual coins with no cash value.
+        Results are generated on the server and shared by every player. 18+ · Play responsibly.
       </p>
     </div>
   );
