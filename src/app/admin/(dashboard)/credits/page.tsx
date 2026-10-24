@@ -9,7 +9,9 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/chip";
 import { GlassCard } from "@/components/ui/glass-card";
 import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { cn, formatCoins, timeAgo } from "@/lib/utils";
+import { toast } from "@/store/toast";
 import type { AdminLedgerEntry, PlatformUser } from "@/types";
 
 const columns: Column<AdminLedgerEntry>[] = [
@@ -31,10 +33,25 @@ const columns: Column<AdminLedgerEntry>[] = [
   { key: "by", header: "By", cell: (e) => <span className="text-white/50">{e.adminName ?? "—"}</span> },
 ];
 
+interface CreditRequest { id: number; userId: number; name: string; email: string; balance: number; amount: number; message: string | null; at: number }
+
 export default function AdminCreditsPage() {
   const users = useApi<{ users: PlatformUser[] }>("/api/admin/users");
   const log = useApi<{ entries: AdminLedgerEntry[] }>("/api/admin/ledger?kinds=grant,deduct", 15_000);
+  const reqs = useApi<{ requests: CreditRequest[] }>("/api/admin/credit-requests", 10_000);
   const [q, setQ] = useState("");
+
+  const resolve = async (r: CreditRequest, action: "approve" | "dismiss") => {
+    try {
+      await api(`/api/admin/credit-requests/${r.id}`, { method: "POST", json: { action } });
+      toast.success(action === "approve" ? `Added ${formatCoins(r.amount)} credits to ${r.name}` : "Request dismissed");
+      void reqs.reload();
+      void users.reload();
+      void log.reload();
+    } catch (e) {
+      toast.error("Could not update request", (e as Error).message);
+    }
+  };
   const [target, setTarget] = useState<PlatformUser | null>(null);
 
   const matches = useMemo(() => {
@@ -46,6 +63,25 @@ export default function AdminCreditsPage() {
   return (
     <>
       <PageHeader title="Credits" subtitle="Allocate credits to players. They appear in the player's wallet instantly and every change is logged." />
+
+      {(reqs.data?.requests ?? []).length > 0 && (
+        <GlassCard strong className="mb-6 p-5">
+          <h2 className="mb-3 font-bold">Credit requests ({reqs.data!.requests.length})</h2>
+          <ul className="divide-y divide-white/10">
+            {reqs.data!.requests.map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{r.name} <span className="text-xs font-normal text-white/45">{r.email} · balance {formatCoins(r.balance)}</span></p>
+                  <p className="text-xs text-white/50">{timeAgo(r.at)}{r.message ? ` · ${r.message}` : ""}</p>
+                </div>
+                <span className="font-display font-bold">{formatCoins(r.amount)}</span>
+                <button onClick={() => resolve(r, "approve")} className="cursor-pointer rounded-xl bg-brand-green/20 px-3 py-1.5 text-sm font-semibold text-brand-green hover:bg-brand-green/30">Approve</button>
+                <button onClick={() => resolve(r, "dismiss")} className="cursor-pointer rounded-xl bg-white/10 px-3 py-1.5 text-sm font-semibold text-white/70 hover:bg-white/15">Dismiss</button>
+              </li>
+            ))}
+          </ul>
+        </GlassCard>
+      )}
 
       <GlassCard strong className="mb-6 p-5">
         <h2 className="mb-3 font-bold">Find a player</h2>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight, Gift, RotateCcw } from "lucide-react";
 import { AuthGate } from "@/components/auth/auth-gate";
@@ -36,9 +37,11 @@ function WalletView() {
           <Coin size={44} /> {formatCoins(user.balance)}
         </p>
         <p className="mt-4 text-sm text-white/55">
-          Need more credits? Contact the platform owner — credits are allocated to your account from the owner dashboard
-          and show up here instantly.
+          Need more credits? Credits are allocated to your account by the owner and show up here instantly.
         </p>
+        <Link href="/credits" className="mt-3 inline-block text-sm font-semibold text-brand-gold hover:underline">
+          Request credits →
+        </Link>
       </GlassCard>
 
       <GlassCard className="p-5 md:p-6">

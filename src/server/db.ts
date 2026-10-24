@@ -70,6 +70,17 @@ CREATE TABLE IF NOT EXISTS game_config (
   max_bet INTEGER NOT NULL,
   rake REAL NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS credit_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount INTEGER NOT NULL,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS credit_requests_status ON credit_requests(status, id DESC);
 `;
 
 const DEFAULT_CONFIG: Record<string, { rtp: number; min: number; max: number; rake: number }> = {
